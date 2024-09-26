@@ -5,6 +5,8 @@ require("dotenv").config();
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const { REST } = require("@discordjs/rest"); // Import REST from @discordjs/rest
 const { Routes } = require("discord-api-types/v10"); // Import Routes for command registration
+const { WebcastPushConnection } = require('./tiktok-live-connector-local');
+const { spawn } = require('child_process'); // To run Python script
 
 const {
   generateDependencyReport,
@@ -52,8 +54,16 @@ const valorantMaps = [
 // Slash commands definition
 const commands = [
   {
-    name: "tibi",
-    description: "Tibi là ai",
+    name: "tiktok",
+    description: "Monitor a TikTok live stream for comments",
+    options: [
+      {
+        name: "url",
+        type: 3, // STRING type
+        description: "The URL of the TikTok live stream",
+        required: true,
+      },
+    ],
   },
   {
     name: "random",
@@ -90,6 +100,9 @@ const commands = [
 // Register the slash commands
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
+
+let tiktokLiveConnection;
+
 (async () => {
   try {
     console.log("Started refreshing application (/) commands.");
@@ -112,8 +125,31 @@ client.on("interactionCreate", async (interaction) => {
 
   const { commandName, options } = interaction;
 
-  if (commandName === "tibi") {
-    await interaction.reply("Tibi là đười ươi");
+  if (commandName === 'tiktok') {
+    const streamUrl = interaction.options.getString('url');
+    const username = extractUsernameFromUrl(streamUrl);
+
+    if (username) {
+      await interaction.reply(`Connecting to TikTok live stream: ${streamUrl}`);
+      tiktokLiveConnection = new WebcastPushConnection(username);
+
+      tiktokLiveConnection.connect().then(() => {
+        console.log(`Connected to stream for user: ${username}`);
+      }).catch(err => {
+        console.error('Error connecting to TikTok live stream:', err);
+        interaction.followUp('Error connecting to the TikTok stream.');
+      });
+
+      tiktokLiveConnection.on('chat', data => {
+        const comment = `${data.uniqueId} đã bình luận: ${data.comment}`;
+        console.log(comment);
+
+        // Send the comment to the Discord channel
+        // interaction.reply(comment);
+      });
+    } else {
+      await interaction.reply('Invalid TikTok stream URL. Please enter a valid live stream URL.');
+    }
   }
 
   if (commandName === "random") {
@@ -229,3 +265,10 @@ client.on("messageCreate", async (message) => {
 
 // Log In our bot
 client.login(TOKEN);
+
+
+// Helper function to extract the username from the TikTok URL
+function extractUsernameFromUrl(url) {
+  const match = url.match(/tiktok\.com\/@(\w+)\/live/);
+  return match ? match[1] : null;
+}
