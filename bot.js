@@ -34,6 +34,8 @@ const TOKEN = "";
 const CLIENT_ID = "";
 
 var chats = new Array();
+var isSpeaking = false;
+var currentTime = new Date();
 
 let connection; // To store the connection
 let timeout; // To store the timeout ID
@@ -135,23 +137,26 @@ client.on("interactionCreate", async (interaction) => {
       tiktokLiveConnection = new WebcastPushConnection(username);
 
       tiktokLiveConnection.connect().then(() => {
+        currentTime =  Date.now();
+        console.log(`current time : ${currentTime}`);
         console.log(`Connected to stream for user: ${username}`);
-        speechList(interaction.member.voice.channel, interaction,);
+        // speechList(interaction.member.voice.channel, interaction,);
       }).catch(err => {
         console.error('Error connecting to TikTok live stream:', err);
         interaction.followUp('Error connecting to the TikTok stream.');
       });
 
       tiktokLiveConnection.on('chat', data => {
-        text = data.comment.replace("@s", "");
-        const comment = `${data.uniqueId} đã bình luận: ${text}`;
-        chats.push(comment);
-        console.log(chats);
+        if(currentTime < data.createTime){
+          const comment = `${data.nickname} nói: ${data.comment}`;
+          chats.push(comment);
+          speechList(interaction.member.voice.channel, interaction,);
+        }
       });
     } else {
       await interaction.reply('Invalid TikTok stream URL. Please enter a valid live stream URL.');
     }
-   
+
   }
 
   if (commandName === "random") {
@@ -190,7 +195,7 @@ client.on("ready", () => {
 // Command to join voice channel and play TTS audio
 client.on("messageCreate", async (message) => {
   // Check if the message starts with "!say"
-  if (message.content.startsWith(".")) {
+  if (message.content.startsWith("!")) {
     const voiceChannel = message.member.voice.channel;
 
     if (!voiceChannel) {
@@ -276,55 +281,61 @@ function extractUsernameFromUrl(url) {
 }
 
 
-function speechList(channel, interaction){
+function speechList(channel, interaction) {
   console.log(chats);
-  if(chats.length > 0){
-    var txt = chats[0];
-    playTTS(txt, "./output.mp3", channel, interaction, () => {
-      setTimeout(function() {
-        chats.concat(chats.splice(0,1));
-        console.log(chats);
-        speechList(channel,interaction);
-      }, 500);
-    });
-  }else{
-    speechList(channel,interaction);
+  if (isSpeaking) {
+    setTimeout(function () {
+      speechList(channel, interaction);
+    }, 1000);
+  }
+  else {
+    if (chats.length > 0) {
+      var txt = chats[0];
+      isSpeaking = true;
+      playTTS(txt, "./output.mp3", channel, interaction, () => {
+        setTimeout(function () {
+          chats.concat(chats.splice(0, 1));
+          isSpeaking = false;
+          speechList(channel, interaction);
+        }, 1000);
+      });
+    }
   }
 }
 
 
 
-// Define the function to generate and play TTS
-function playTTS(textToSay, audioFilePath, voiceChannel, interaction, onFinish) {
-  exec(`python3 tts.py "${textToSay}" ${audioFilePath}`, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error generating TTS: ${error.message}`);
-      return interaction.followUp("There was an error generating the speech.");
-    }
+  // Define the function to generate and play TTS
+  function playTTS(textToSay, audioFilePath, voiceChannel, interaction, onFinish) {
+    exec(`python3 tts.py "${textToSay}" ${audioFilePath}`, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error generating TTS: ${error.message}`);
+        return interaction.followUp("There was an error generating the speech.");
+      }
 
-    try {
-      // Join the voice channel
-      const connection = joinVoiceChannel({
-        channelId: voiceChannel.id,
-        guildId: voiceChannel.guild.id,
-        adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-      });
+      try {
+        // Join the voice channel
+        const connection = joinVoiceChannel({
+          channelId: voiceChannel.id,
+          guildId: voiceChannel.guild.id,
+          adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+        });
 
-      // Play the TTS audio
-      const player = createAudioPlayer();
-      const resource = createAudioResource(audioFilePath);
-      connection.subscribe(player);
-      player.play(resource);
+        // Play the TTS audio
+        const player = createAudioPlayer();
+        const resource = createAudioResource(audioFilePath);
+        connection.subscribe(player);
+        player.play(resource);
 
-      player.addListener("stateChange", (oldOne, newOne) => {
-        if (newOne.status == "idle") {
-          onFinish();
-        }
-      });
-     
-    } catch (error) {
-      console.error("Error joining the voice channel or playing audio:", error);
-      interaction.followUp("There was an error trying to join the voice channel or play audio.");
-    }
-  });
-}
+        player.addListener("stateChange", (oldOne, newOne) => {
+          if (newOne.status == "idle") {
+            onFinish();
+          }
+        });
+
+      } catch (error) {
+        console.error("Error joining the voice channel or playing audio:", error);
+        interaction.followUp("There was an error trying to join the voice channel or play audio.");
+      }
+    });
+  }
