@@ -1,5 +1,4 @@
-// Initialize dotenv
-require("dotenv").config();
+require('dotenv').config(); // Load .env file
 
 // Discord.js versions ^13.0 require us to explicitly define client intents
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
@@ -29,9 +28,10 @@ const client = new Client({
 });
 
 // Use token from .env file
-const TOKEN = "";
+const TOKEN = process.env.DISCORD_TOKEN;
 
-const CLIENT_ID = "";
+const CLIENT_ID = process.env.CLIENT_ID;
+
 
 var chats = new Array();
 var isSpeaking = false;
@@ -148,7 +148,7 @@ client.on("interactionCreate", async (interaction) => {
 
       tiktokLiveConnection.on('chat', data => {
         if(currentTime < data.createTime){
-          const comment = `${data.nickname} nói: ${data.comment}`;
+          const comment = `${data.nickname} : ${data.comment}`;
           chats.push(comment);
           speechList(interaction.member.voice.channel, interaction,);
         }
@@ -195,7 +195,7 @@ client.on("ready", () => {
 // Command to join voice channel and play TTS audio
 client.on("messageCreate", async (message) => {
   // Check if the message starts with "!say"
-  if (message.content.startsWith("!")) {
+  if (message.content.startsWith(".")) {
     const voiceChannel = message.member.voice.channel;
 
     if (!voiceChannel) {
@@ -222,51 +222,7 @@ client.on("messageCreate", async (message) => {
     const audioFilePath = "./output.mp3"; // Output file path
 
     // Run the Python script to generate TTS
-    exec(
-      `python3 tts.py "${textToSay}" ${audioFilePath}`,
-      (error, stdout, stderr) => {
-        if (error) {
-          console.error(`Error generating TTS: ${error.message}`);
-          return message.reply("There was an error generating the speech.");
-        }
-
-        try {
-          // Join the voice channel
-          const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: voiceChannel.guild.id,
-            adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-          });
-
-          // Play the TTS audio
-          const player = createAudioPlayer();
-          const resource = createAudioResource(audioFilePath);
-          connection.subscribe(player);
-          player.play(resource);
-
-          // Clean up after playing
-          player.on("finish", () => {
-            // Start the timeout to disconnect after 5 minutes if everyone leaves
-            if (timeout) clearTimeout(timeout); // Clear existing timeout
-            timeout = setTimeout(() => {
-              if (connection) {
-                connection.destroy(); // Disconnect the bot after 5 minutes
-                connection = null; // Reset the connection variable
-              }
-            }, 5 * 60 * 1000); // 5 minutes
-          });
-        } catch (error) {
-          console.error(
-            "Error joining the voice channel or playing audio:",
-            error
-          );
-          message.reply(
-            "There was an error trying to join the voice channel or play audio.",
-            error
-          );
-        }
-      }
-    );
+    playTTSDemo(textToSay,audioFilePath,voiceChannel, message,()=>{})
   }
 });
 
@@ -339,3 +295,58 @@ function speechList(channel, interaction) {
       }
     });
   }
+
+
+  // Function to join the voice channel
+function joinChannel(voiceChannel) {
+  // Check if already connected to the voice channel
+  if (connection && connection.joinConfig.channelId === voiceChannel.id) {
+    return connection; // Return existing connection if already connected
+  }
+
+  // Join the voice channel and save the connection
+  connection = joinVoiceChannel({
+    channelId: voiceChannel.id,
+    guildId: voiceChannel.guild.id,
+    adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+  });
+
+  return connection;
+}
+
+
+// Function to play TTS
+function playTTSDemo(textToSay, audioFilePath, voiceChannel, interaction, onFinish) {
+  exec(`python3 tts.py "${textToSay}" ${audioFilePath}`, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`Error generating TTS: ${error.message}`);
+      return interaction.followUp("There was an error generating the speech.");
+    }
+
+    try {
+      // Join or reuse the existing voice channel connection
+      const connection = joinChannel(voiceChannel);
+
+      // Play the TTS audio
+      const player = createAudioPlayer();
+      const resource = createAudioResource(audioFilePath);
+      connection.subscribe(player);
+      player.play(resource);
+
+      player.addListener("stateChange", (oldState, newState) => {
+        if (newState.status === AudioPlayerStatus.Idle) {
+          // When done, call the onFinish callback
+          onFinish();
+        }
+      });
+
+      // Clear the previous disconnect timeout
+      if (timeout) clearTimeout(timeout);
+
+
+    } catch (error) {
+      console.error("Error joining the voice channel or playing audio:", error);
+      interaction.followUp("There was an error trying to join the voice channel or play audio.");
+    }
+  });
+}
