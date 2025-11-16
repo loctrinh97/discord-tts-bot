@@ -1,22 +1,17 @@
-require('dotenv').config(); // Load .env file
-
-// Discord.js versions ^13.0 require us to explicitly define client intents
+// bot.js
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
-const { REST } = require("@discordjs/rest"); // Import REST from @discordjs/rest
-const { Routes } = require("discord-api-types/v10"); // Import Routes for command registration
-const { WebcastPushConnection } = require('./lib/src/index');
-const { spawn } = require('child_process'); // To run Python script
+const { REST } = require("@discordjs/rest");
+const { Routes } = require("discord-api-types/v10");
+const { generateDependencyReport } = require("@discordjs/voice");
 
-const {
-  generateDependencyReport,
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource,
-  AudioPlayerStatus,
-} = require("@discordjs/voice");
-const { exec } = require("child_process");
-const fs = require("fs");
+const { TOKEN, CLIENT_ID } = require("./src/config");
+const { commands, handleSlashCommand } = require("./src/commands");
+const { handleMessageTts } = require("./src/tts");
 
+// Log thông tin lib voice
+console.log(generateDependencyReport());
+
+// Tạo Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -27,326 +22,33 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
 
-// Use token from .env file
-const TOKEN = process.env.DISCORD_TOKEN;
-
-const CLIENT_ID = process.env.CLIENT_ID;
-
-
-var chats = new Array();
-var isSpeaking = false;
-var currentTime = new Date();
-
-let connection; // To store the connection
-let timeout; // To store the timeout ID
-
-console.log(generateDependencyReport());
-
-// Define a list of Valorant maps
-const valorantMaps = [
-  "Ascent",
-  "Bind",
-  "Haven",
-  "Split",
-  "Icebox",
-  "Breeze",
-  "Fracture",
-  "Pearl",
-  "Lotus",
-];
-
-// Slash commands definition
-const commands = [
-  {
-    name: "tiktok",
-    description: "Monitor a TikTok live stream for comments",
-    options: [
-      {
-        name: "url",
-        type: 3, // STRING type
-        description: "The URL of the TikTok live stream",
-        required: true,
-      },
-    ],
-  },
-  {
-    name: "random",
-    description: "Generate a random something",
-    options: [
-      {
-        name: "number",
-        description: "Generate a random number between min and max",
-        type: 1, // Subcommand type
-        options: [
-          {
-            name: "min",
-            description: "The minimum number",
-            type: 4, // Integer type
-            required: true,
-          },
-          {
-            name: "max",
-            description: "The maximum number",
-            type: 4, // Integer type
-            required: true,
-          },
-        ],
-      },
-      {
-        name: "map",
-        description: "Get a random Valorant map",
-        type: 1, // Subcommand type
-      },
-    ],
-  },
-];
-
-// Register the slash commands
+// REST client dùng để đăng ký slash commands
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-
-let tiktokLiveConnection;
-
-(async () => {
-  try {
-    console.log("Started refreshing application (/) commands.");
-
-    // Register commands globally
-    await rest.put(
-      Routes.applicationCommands(CLIENT_ID), // Global commands for all servers
-      { body: commands }
-    );
-
-    console.log("Successfully reloaded application (/) commands.");
-  } catch (error) {
-    console.error(error);
-  }
-})();
-
-// Event handler for interaction (slash command)
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isCommand()) return;
-
-  const { commandName, options } = interaction;
-  if (commandName === 'tiktok') {
-    const streamUrl = interaction.options.getString('url');
-    const username = extractUsernameFromUrl(streamUrl);
-
-    if (username) {
-      await interaction.reply(`Connecting to TikTok live stream: ${streamUrl}`);
-      tiktokLiveConnection = new WebcastPushConnection(username);
-
-      tiktokLiveConnection.connect().then(() => {
-        currentTime =  Date.now();
-        console.log(`current time : ${currentTime}`);
-        console.log(`Connected to stream for user: ${username}`);
-        // speechList(interaction.member.voice.channel, interaction,);
-      }).catch(err => {
-        console.error('Error connecting to TikTok live stream:', err);
-        interaction.followUp('Error connecting to the TikTok stream.');
-      });
-
-      tiktokLiveConnection.on('chat', data => {
-        if(currentTime < data.createTime){
-          const comment = `${data.nickname} : ${data.comment}`;
-          chats.push(comment);
-          speechList(interaction.member.voice.channel, interaction,);
-        }
-      });
-    } else {
-      await interaction.reply('Invalid TikTok stream URL. Please enter a valid live stream URL.');
-    }
-
-  }
-
-  if (commandName === "random") {
-    const subcommand = options.getSubcommand();
-
-    // Handle random number generation
-    if (subcommand === "number") {
-      const min = options.getInteger("min");
-      const max = options.getInteger("max");
-
-      if (min >= max) {
-        await interaction.reply(
-          "The minimum value must be less than the maximum value."
-        );
-      } else {
-        const randomNum = Math.floor(Math.random() * (max - min + 1)) + min;
-        await interaction.reply(
-          `Random number between ${min} and ${max}: **${randomNum}**`
-        );
-      }
-    }
-
-    // Handle random map selection
-    else if (subcommand === "map") {
-      const randomMap =
-        valorantMaps[Math.floor(Math.random() * valorantMaps.length)];
-      await interaction.reply(`Random Valorant map: **${randomMap}**`);
-    }
-  }
-});
-
+// Event: bot online
 client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
 });
 
-// Command to join voice channel and play TTS audio
-client.on("messageCreate", async (message) => {
-  // Check if the message starts with "!say"
-  if (message.content.startsWith(".")) {
-    const voiceChannel = message.member.voice.channel;
+// Event: slash commands
+client.on("interactionCreate", handleSlashCommand);
 
-    if (!voiceChannel) {
-      return message.reply(
-        "You need to be in a voice channel to use this command."
-      );
-    }
+// Event: message prefix "." -> TTS demo
+client.on("messageCreate", handleMessageTts);
 
-    let textToSay = message.content;
-    if (message.mentions.users.size > 0) {
-      // Create a response string with usernames replacing mentions
-      message.mentions.users.forEach((user) => {
-        textToSay = textToSay
-          .replace(`<@${user.id}>`, user.username)
-          .replace("tibi.ne", "đười ươi"); // Replace mention ID with username
-      });
-    }
+// Đăng ký slash commands + login
+(async () => {
+  try {
+    console.log("Started refreshing application (/) commands.");
 
-    textToSay = textToSay.slice(1).trim(); // Extract the text after "!say "
-    if (!textToSay) {
-      return message.reply("Please provide a message for me to say.");
-    }
-
-    const audioFilePath = "./output.mp3"; // Output file path
-
-    // Run the Python script to generate TTS
-    playTTSDemo(textToSay,audioFilePath,voiceChannel, message,()=>{})
-  }
-});
-
-// Log In our bot
-client.login(TOKEN);
-
-
-// Helper function to extract the username from the TikTok URL
-function extractUsernameFromUrl(url) {
-  const match = url.match(/tiktok\.com\/@([a-zA-Z0-9._]+)\/live/);
-  return match ? match[1] : null;
-}
-
-
-function speechList(channel, interaction) {
-  console.log(chats);
-  if (isSpeaking) {
-    setTimeout(function () {
-      speechList(channel, interaction);
-    }, 1000);
-  }
-  else {
-    if (chats.length > 0) {
-      var txt = chats[0];
-      isSpeaking = true;
-      playTTS(txt, "./output.mp3", channel, interaction, () => {
-        setTimeout(function () {
-          chats.concat(chats.splice(0, 1));
-          isSpeaking = false;
-          speechList(channel, interaction);
-        }, 1000);
-      });
-    }
-  }
-}
-
-
-
-  // Define the function to generate and play TTS
-  function playTTS(textToSay, audioFilePath, voiceChannel, interaction, onFinish) {
-    exec(`python3 tts.py "${textToSay}" ${audioFilePath}`, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Error generating TTS: ${error.message}`);
-        return interaction.followUp("There was an error generating the speech.");
-      }
-
-      try {
-        // Join the voice channel
-        const connection = joinVoiceChannel({
-          channelId: voiceChannel.id,
-          guildId: voiceChannel.guild.id,
-          adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-        });
-
-        // Play the TTS audio
-        const player = createAudioPlayer();
-        const resource = createAudioResource(audioFilePath);
-        connection.subscribe(player);
-        player.play(resource);
-
-        player.addListener("stateChange", (oldOne, newOne) => {
-          if (newOne.status == "idle") {
-            onFinish();
-          }
-        });
-
-      } catch (error) {
-        console.error("Error joining the voice channel or playing audio:", error);
-        interaction.followUp("There was an error trying to join the voice channel or play audio.");
-      }
+    await rest.put(Routes.applicationCommands(CLIENT_ID), {
+      body: commands,
     });
+
+    console.log("Successfully reloaded application (/) commands.");
+  } catch (error) {
+    console.error("Error registering slash commands:", error);
   }
+})();
 
-
-  // Function to join the voice channel
-function joinChannel(voiceChannel) {
-  // Check if already connected to the voice channel
-  if (connection && connection.joinConfig.channelId === voiceChannel.id) {
-    return connection; // Return existing connection if already connected
-  }
-
-  // Join the voice channel and save the connection
-  connection = joinVoiceChannel({
-    channelId: voiceChannel.id,
-    guildId: voiceChannel.guild.id,
-    adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-  });
-
-  return connection;
-}
-
-
-// Function to play TTS
-function playTTSDemo(textToSay, audioFilePath, voiceChannel, interaction, onFinish) {
-  exec(`python3 tts.py "${textToSay}" ${audioFilePath}`, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error generating TTS: ${error.message}`);
-      return interaction.followUp("There was an error generating the speech.");
-    }
-
-    try {
-      // Join or reuse the existing voice channel connection
-      const connection = joinChannel(voiceChannel);
-
-      // Play the TTS audio
-      const player = createAudioPlayer();
-      const resource = createAudioResource(audioFilePath);
-      connection.subscribe(player);
-      player.play(resource);
-
-      player.addListener("stateChange", (oldState, newState) => {
-        if (newState.status === AudioPlayerStatus.Idle) {
-          // When done, call the onFinish callback
-          onFinish();
-        }
-      });
-
-      // Clear the previous disconnect timeout
-      if (timeout) clearTimeout(timeout);
-
-
-    } catch (error) {
-      console.error("Error joining the voice channel or playing audio:", error);
-      interaction.followUp("There was an error trying to join the voice channel or play audio.");
-    }
-  });
-}
+client.login(TOKEN);
