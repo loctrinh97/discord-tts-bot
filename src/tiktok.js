@@ -103,7 +103,7 @@ async function handleTikTokCommand(interaction) {
             // If you want to read ALL comments since connection,
             // you can keep or remove the timestamp check.
             if (tiktokLastTimestamp < data.createTime) {
-                const comment = `${data.nickname} : ${data.comment}`;
+                const comment = `${data.comment}`;
                 chats.push(comment);
 
                 const voiceChannel = interaction.member?.voice?.channel;
