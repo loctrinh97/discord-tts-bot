@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+Dockerfile
+.git
+.gitignore
+.vscode
+output.mp3
+output_tiktok.mp3
