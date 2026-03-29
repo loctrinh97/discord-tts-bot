@@ -1,9 +1,9 @@
 git clone ...
 cd discord-tts-bot
-# sửa .env
+# edit .env
 .\setup.ps1
-.\.venv\Scripts\activate
-node bot.js
+npm run deploy:commands
+npm start
 
 
 

@@ -1,17 +1,29 @@
-// src/commands.js
+const { ApplicationCommandOptionType } = require("discord.js");
 const { valorantMaps } = require("./config");
 const { handleTikTokCommand, handleTikTokStopCommand } = require("./tiktok");
+const { handleSayCommand } = require("./voice");
 
-// Định nghĩa slash commands
 const commands = [
+  {
+    name: "say",
+    description: "Noi noi dung vao voice channel hien tai",
+    options: [
+      {
+        name: "text",
+        description: "Noi dung can doc",
+        type: ApplicationCommandOptionType.String,
+        required: true,
+      },
+    ],
+  },
   {
     name: "tiktok",
     description: "Monitor a TikTok live stream for comments",
     options: [
       {
         name: "url",
-        type: 3, // STRING
         description: "The URL of the TikTok live stream",
+        type: ApplicationCommandOptionType.String,
         required: true,
       },
     ],
@@ -23,18 +35,18 @@ const commands = [
       {
         name: "number",
         description: "Generate a random number between min and max",
-        type: 1, // SUBCOMMAND
+        type: ApplicationCommandOptionType.Subcommand,
         options: [
           {
             name: "min",
             description: "The minimum number",
-            type: 4, // INTEGER
+            type: ApplicationCommandOptionType.Integer,
             required: true,
           },
           {
             name: "max",
             description: "The maximum number",
-            type: 4, // INTEGER
+            type: ApplicationCommandOptionType.Integer,
             required: true,
           },
         ],
@@ -42,7 +54,7 @@ const commands = [
       {
         name: "map",
         description: "Get a random Valorant map",
-        type: 1, // SUBCOMMAND
+        type: ApplicationCommandOptionType.Subcommand,
       },
     ],
   },
@@ -53,16 +65,34 @@ const commands = [
       {
         name: "tiktok",
         description: "Disconnect from TikTok live",
-        type: 1, // SUBCOMMAND
+        type: ApplicationCommandOptionType.Subcommand,
+      },
+    ],
+  },
+  {
+    name: "disconnect",
+    description: "Disconnect running features",
+    options: [
+      {
+        name: "tiktok",
+        description: "Disconnect from TikTok live",
+        type: ApplicationCommandOptionType.Subcommand,
       },
     ],
   },
 ];
 
 async function handleSlashCommand(interaction) {
-  if (!interaction.isCommand()) return;
+  if (!interaction.isChatInputCommand()) {
+    return;
+  }
 
   const { commandName, options } = interaction;
+
+  if (commandName === "say") {
+    await handleSayCommand(interaction);
+    return;
+  }
 
   if (commandName === "tiktok") {
     await handleTikTokCommand(interaction);
@@ -94,17 +124,18 @@ async function handleSlashCommand(interaction) {
       const randomMap =
         valorantMaps[Math.floor(Math.random() * valorantMaps.length)];
       await interaction.reply(`Random Valorant map: **${randomMap}**`);
-      return;
     }
+
+    return;
   }
 
-  if (commandName === "stop") {
-    const subcommand = options.getSubcommand();
+  if (commandName === "stop" && options.getSubcommand() === "tiktok") {
+    await handleTikTokStopCommand(interaction);
+    return;
+  }
 
-    if (subcommand === "tiktok") {
-      await handleTikTokStopCommand(interaction);
-      return;
-    }
+  if (commandName === "disconnect" && options.getSubcommand() === "tiktok") {
+    await handleTikTokStopCommand(interaction);
   }
 }
 
