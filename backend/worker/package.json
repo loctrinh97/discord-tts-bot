@@ -1,0 +1,9 @@
+{
+  "name": "@discord-tts-bot/worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Background worker scaffold",
+  "scripts": {
+    "start": "node src/index.js"
+  }
+}

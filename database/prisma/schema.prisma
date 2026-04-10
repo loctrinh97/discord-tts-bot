@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  FULFILLED
+}
+
+model User {
+  id              String         @id @default(cuid())
+  discordUserId   String         @unique
+  username        String
+  avatarUrl       String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  guilds          Guild[]        @relation("GuildOwner")
+  orders          Order[]
+  notifications   Notification[]
+}
+
+model Guild {
+  id                String       @id @default(cuid())
+  discordGuildId    String       @unique
+  name              String
+  ownerId           String?
+  ticketChannelId   String?
+  pricingChannelId  String?
+  marketEnabled     Boolean      @default(false)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  owner             User?        @relation("GuildOwner", fields: [ownerId], references: [id])
+  tickets           Ticket[]
+  marketSnapshots   MarketData[]
+}
+
+model Ticket {
+  id                String       @id @default(cuid())
+  guildId           String
+  channelId         String       @unique
+  requesterName     String
+  status            String
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  guild             Guild        @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  orders            Order[]
+}
+
+model Order {
+  id                String       @id @default(cuid())
+  userId            String
+  ticketId          String?
+  amount            Decimal      @db.Decimal(12, 2)
+  currency          String       @default("USD")
+  status            OrderStatus  @default(PENDING)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket            Ticket?      @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+}
+
+model MarketData {
+  id                String       @id @default(cuid())
+  guildId           String
+  symbol            String
+  price             Decimal      @db.Decimal(18, 8)
+  source            String
+  capturedAt        DateTime     @default(now())
+  guild             Guild        @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, symbol, capturedAt])
+}
+
+model Notification {
+  id                String       @id @default(cuid())
+  userId            String
+  channel           String
+  target            String
+  message           String
+  sentAt            DateTime?
+  createdAt         DateTime     @default(now())
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
