@@ -253,21 +253,52 @@ async function enqueueSpeech({ guild, voiceChannel, text, onError }) {
   void processQueue(state);
 }
 
+async function sendInteractionResponse(interaction, content) {
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(content);
+    return;
+  }
+
+  await interaction.reply(content);
+}
+
+async function deferInteractionReply(interaction) {
+  try {
+    await interaction.deferReply();
+    return true;
+  } catch (error) {
+    if (error?.code === 10062) {
+      console.warn("[Voice] Interaction expired before /say could be acknowledged.");
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 async function handleSayCommand(interaction) {
   const voiceChannel = interaction.member?.voice?.channel;
   if (!voiceChannel) {
-    await interaction.reply("Ban can vao voice channel truoc khi dung /say.");
+    await sendInteractionResponse(
+      interaction,
+      "Ban can vao voice channel truoc khi dung /say."
+    );
     return;
   }
 
   const text = normalizeText(interaction.options.getString("text", true));
   if (!text) {
-    await interaction.reply("Hay nhap noi dung de bot doc.");
+    await sendInteractionResponse(interaction, "Hay nhap noi dung de bot doc.");
+    return;
+  }
+
+  const deferred = await deferInteractionReply(interaction);
+  if (!deferred) {
     return;
   }
 
   if (text.length > MAX_TEXT_LENGTH) {
-    await interaction.reply(
+    await interaction.editReply(
       `Noi dung qua dai. Gioi han hien tai la ${MAX_TEXT_LENGTH} ky tu.`
     );
     return;
@@ -278,15 +309,13 @@ async function handleSayCommand(interaction) {
     interaction.user.id
   );
   if (remainingCooldown > 0) {
-    await interaction.reply(
+    await interaction.editReply(
       `Ban dang cooldown. Thu lai sau ${Math.ceil(remainingCooldown / 1000)}s.`
     );
     return;
   }
 
   const responseContent = `${getDisplayName(interaction.member)}: ${text}`;
-
-  await interaction.deferReply();
 
   try {
     await enqueueSpeech({
@@ -299,7 +328,7 @@ async function handleSayCommand(interaction) {
           return;
         }
 
-        await interaction.reply(message);
+        await sendInteractionResponse(interaction, message);
       },
     });
     consumeCooldown(interaction.guildId, interaction.user.id);

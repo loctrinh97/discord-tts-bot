@@ -52,7 +52,9 @@ client.once("clientReady", async () => {
 });
 
 client.on("interactionCreate", (interaction) => {
-  void handleSlashCommand(interaction);
+  void handleSlashCommand(interaction).catch((error) => {
+    console.error("Unhandled interaction error:", error);
+  });
 });
 
 client.on("voiceStateUpdate", (oldState, newState) => {
